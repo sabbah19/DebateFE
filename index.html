@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Debate Chat</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #f0f2f5;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+    }
+
+    .container {
+      background-color: #fff;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+      width: 400px;
+      text-align: center;
+    }
+
+    h1 {
+      font-size: 24px;
+      margin-bottom: 20px;
+      color: #333;
+    }
+
+    select, input {
+      width: 100%;
+      padding: 10px;
+      margin: 10px 0;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      font-size: 16px;
+    }
+
+    button {
+      background-color: #007bff;
+      color: #fff;
+      padding: 10px 15px;
+      border: none;
+      border-radius: 5px;
+      font-size: 16px;
+      cursor: pointer;
+      width: 100%;
+      margin-top: 10px;
+    }
+
+    button:hover {
+      background-color: #0056b3;
+    }
+
+    .red-button {
+      background-color: #dc3545; /* Red color */
+      color: #fff;
+    }
+
+    .red-button:hover {
+      background-color: #c82333;
+    }
+
+    #loading {
+      font-size: 16px;
+      color: #888;
+      margin: 20px 0;
+    }
+
+    .chat-box {
+      border: 1px solid #ddd;
+      padding: 15px;
+      width: 100%;
+      box-sizing: border-box;
+      height: 250px;
+      overflow-y: auto;
+      border-radius: 10px;
+      margin-bottom: 10px;
+      background-color: #f4f4f4;
+      text-align: left;
+      display: flex;
+      flex-direction: column;
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+
+    .message {
+      margin: 5px 0;
+      padding: 8px 12px;
+      border-radius: 20px;
+      max-width: 70%;
+      word-wrap: break-word;
+    }
+
+    .message.you {
+      background-color: #d1e7dd;
+      align-self: flex-end;
+    }
+
+    .message.partner {
+      background-color: #f8d7da;
+      align-self: flex-start;
+    }
+
+    #messageInput {
+      margin-top: 10px;
+      border-radius: 20px;
+      border: 1px solid #ccc;
+      padding: 10px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    /* Toast notification styles */
+    #notification {
+      visibility: hidden;
+      min-width: 250px;
+      background-color: #333;
+      color: #fff;
+      text-align: center;
+      border-radius: 5px;
+      padding: 10px;
+      position: fixed;
+      z-index: 1;
+      left: 50%;
+      top: 20px;
+      transform: translateX(-50%);
+    }
+
+    #notification.show {
+      visibility: visible;
+      animation: fadeInOut 3s ease-in-out;
+    }
+
+    @keyframes fadeInOut {
+      0%, 100% { opacity: 0; }
+      10%, 90% { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 id="pageHeading">Choose a topic to debate</h1>
+    <div id="topicSelection">
+      <select id="topicSelect">
+        <option value="random">Random</option>
+        <option value="religion">Religion</option>
+        <option value="prolife-vs-prochoice">Pro-Life vs. Pro-Choice</option>
+        <option value="politics">Politics</option>
+        <option value="israel-palestine">Israel-Palestine Conflict</option>
+        <option value="gun-control">Gun Control</option>
+        <option value="lgbtq-rights">LGBTQ+ Rights</option>
+        <option value="immigration-policies">Immigration Policies</option>
+        <option value="death-penalty">Death Penalty</option>
+        <option value="free-speech-vs-hate-speech">Free Speech vs. Hate Speech</option>
+        <option value="capitalism-vs-socialism">Capitalism vs. Socialism</option>
+      </select>
+      <button id="chooseTopic">Start Debate</button>
+    </div>
+
+    <div id="loading" class="loading" style="display: none;">
+      Waiting for a partner...
+      <button id="backButton" class="red-button" style="display: block;">Back</button>
+    </div>
+    
+    <div id="chatContainer" style="display:none;">
+      <div id="chatBox" class="chat-box"></div>
+      <input type="text" id="messageInput" placeholder="Type your message">
+      <button id="sendMessage">Send</button>
+      <button id="endDebate" class="red-button">End Debate</button> <!-- End Debate is now red -->
+      <button id="leaveChat" class="red-button" style="display:none;">Leave Chat</button>
+    </div>
+  </div>
+
+  <div id="notification">Your partner has left the debate.</div>
+
+  <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+  <script>
+    const socket = io('http://localhost:3001');
+    let lastSelectedTopic = null;
+  
+    // Scroll to the bottom of the chat box when a new message is added
+    function scrollToBottom() {
+      const chatBox = document.getElementById('chatBox');
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+  
+    // Show toast notification
+    function showNotification(message) {
+      const notification = document.getElementById('notification');
+      notification.textContent = message;
+      notification.classList.add('show');
+  
+      setTimeout(() => {
+        notification.classList.remove('show');
+      }, 3000);
+    }
+  
+    // Select the last used topic
+    function selectLastTopic() {
+      if (lastSelectedTopic) {
+        const topicSelect = document.getElementById('topicSelect');
+        topicSelect.value = lastSelectedTopic;
+      }
+    }
+  
+    // Choose a topic and start debate
+    document.getElementById('chooseTopic').addEventListener('click', () => {
+      const topic = document.getElementById('topicSelect').value;
+      lastSelectedTopic = topic;
+      socket.emit('chooseTopic', topic);
+  
+      document.getElementById('pageHeading').textContent = `Debate ${topic}`;
+      document.getElementById('topicSelection').style.display = 'none';
+      document.getElementById('loading').style.display = 'block';
+    });
+  
+    // Back button logic: Cancel waiting and return to the topic selection
+    document.getElementById('backButton').addEventListener('click', () => {
+      socket.emit('cancelWait');
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('topicSelection').style.display = 'block';
+      document.getElementById('pageHeading').textContent = 'Choose a topic to debate'; // Reset the title
+    });
+  
+    // Partner found logic
+    socket.on('partnerFound', ({ partnerId }) => {
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('chatContainer').style.display = 'block';
+      resetButtons(); // Reset button states and listeners
+      focusMessageInput();
+    });
+  
+    // Reset button states and listeners
+    function resetButtons() {
+      const sendButton = document.getElementById('sendMessage');
+      const endDebateButton = document.getElementById('endDebate');
+  
+      // Reset Send button
+      sendButton.textContent = 'Send';
+      sendButton.classList.remove('red-button');
+      sendButton.removeEventListener('click', findNewOpponent); // Remove new opponent event
+      sendButton.addEventListener('click', sendMessage); // Add send message event
+  
+      // Ensure End Debate button is visible
+      endDebateButton.style.display = 'block';
+  
+      // Auto-focus on the message input field
+      focusMessageInput();
+    }
+  
+    // Send message logic
+    function sendMessage() {
+      const message = document.getElementById('messageInput').value;
+  
+      socket.emit('message', { message });
+      document.getElementById('chatBox').innerHTML += `<div class="message you">You: ${message}</div>`;
+      document.getElementById('messageInput').value = '';
+  
+      scrollToBottom();
+      focusMessageInput();
+    }
+  
+    // Auto-focus on the message input field
+    function focusMessageInput() {
+      const messageInput = document.getElementById('messageInput');
+      messageInput.focus();
+    }
+  
+    // Add event listener to send message on Enter key press
+    document.getElementById('messageInput').addEventListener('keydown', function(event) {
+      if (event.key === 'Enter') {
+        sendMessage();
+      }
+    });
+  
+    // Receive message from partner
+    socket.on('message', (data) => {
+      document.getElementById('chatBox').innerHTML += `<div class="message partner">Partner: ${data.message}</div>`;
+      scrollToBottom();
+    });
+  
+    // End debate logic for the initiator (Mr. A)
+    document.getElementById('endDebate').addEventListener('click', () => {
+      socket.emit('endDebate');
+      resetChat();
+    });
+  
+    // Reset the chat when the user ends the debate (Mr. A)
+    function resetChat() {
+      document.getElementById('chatContainer').style.display = 'none';
+      document.getElementById('chatBox').innerHTML = '';
+      document.getElementById('pageHeading').textContent = 'Choose a topic to debate';
+      document.getElementById('topicSelection').style.display = 'block';
+      selectLastTopic();
+    }
+  
+    // Partner ends chat logic (Mr. B remains in chat)
+    socket.on('partnerEnded', () => {
+      showNotification('Your partner has left the debate.');
+  
+      // Change "Send" button to "New Opponent"
+      const sendButton = document.getElementById('sendMessage');
+      sendButton.textContent = 'New Opponent';
+      sendButton.classList.add('red-button');
+      sendButton.removeEventListener('click', sendMessage); // Remove send message event listener
+      sendButton.addEventListener('click', findNewOpponent); // Add new event listener to find a new opponent
+  
+      // Show the "End Debate" button even if the partner has left
+      document.getElementById('endDebate').style.display = 'block';
+    });
+  
+    // Find a new opponent logic
+    function findNewOpponent() {
+      socket.emit('chooseTopic', lastSelectedTopic); // Rejoin the waiting room for the current topic
+      document.getElementById('chatContainer').style.display = 'none';
+      document.getElementById('loading').style.display = 'block'; // Show waiting state again
+    }
+  
+    // Leave chat logic for Mr. B
+    document.getElementById('leaveChat').addEventListener('click', () => {
+      resetChat();
+      document.getElementById('leaveChat').style.display = 'none';
+      document.getElementById('endDebate').style.display = 'block';
+    });
+  </script>
+  
+</body>
+</html>
